@@ -1,6 +1,6 @@
 [package]
 name = "vita-crashdump"
-version = "0.2"
+version = "0.2.0"
 edition = "2021"
 default-run = "vita-crashdump"
 
