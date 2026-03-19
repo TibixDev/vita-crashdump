@@ -30,8 +30,7 @@ const SIDEBAR_WIDTH: f32 = 200.0;
 const DROP_ZONE_MIN_W: f32 = 400.0;
 const DROP_ZONE_MAX_W: f32 = 600.0;
 const DROP_ZONE_RATIO: f32 = 0.6;
-const DROP_ZONE_H_EMPTY: f32 = 140.0;
-const DROP_ZONE_H_LOADED: f32 = 100.0;
+
 const WINDOW_SIZE: [f32; 2] = [1100.0, 750.0];
 const WINDOW_MIN: [f32; 2] = [800.0, 500.0];
 const BTN_MIN_SIZE: egui::Vec2 = egui::vec2(200.0, 48.0);
@@ -102,6 +101,11 @@ impl App {
         visuals.selection.bg_fill = COLOR_ACCENT;
         visuals.widgets.active.bg_fill = COLOR_WIDGET_ACTIVE;
         cc.egui_ctx.set_visuals(visuals);
+
+        // Register Phosphor icon font
+        let mut fonts = egui::FontDefinitions::default();
+        egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
+        cc.egui_ctx.set_fonts(fonts);
 
         let dump_path = initial_dump.unwrap_or_default();
         let (elf_path, elf_auto) = find_elf_for_dump(&dump_path)
@@ -189,51 +193,83 @@ impl App {
                     ui.add_space(top_pad);
 
                     // Title
-                    ui.label(egui::RichText::new("VITA CRASHDUMP").size(12.0).color(COLOR_ACCENT).strong());
+                    ui.label(egui::RichText::new(format!("{} VITA CRASHDUMP", egui_phosphor::regular::BUG)).size(12.0).color(COLOR_ACCENT).strong());
                     ui.add_space(2.0);
                     ui.heading(egui::RichText::new("Analyzer").size(36.0).strong().color(COLOR_TITLE));
                     ui.add_space(32.0);
 
                     let AppState::FileSelect(ref mut fs) = self.state else { return };
 
-                    // Drop zone
-                    let drop_w = (available.x * DROP_ZONE_RATIO).clamp(DROP_ZONE_MIN_W, DROP_ZONE_MAX_W);
-                    let drop_h = if fs.dump_path.is_empty() { DROP_ZONE_H_EMPTY } else { DROP_ZONE_H_LOADED };
-                    let (rect, response) = ui.allocate_exact_size(egui::vec2(drop_w, drop_h), egui::Sense::click());
-                    let painter = ui.painter_at(rect);
+                    // Two file cards side by side
+                    let total_w = (available.x * DROP_ZONE_RATIO).clamp(DROP_ZONE_MIN_W, DROP_ZONE_MAX_W);
+                    let card_gap = 12.0;
+                    let card_w = (total_w - card_gap) / 2.0;
+                    let card_h = 150.0;
 
-                    // Background + border
-                    let bg = if hovering { COLOR_BG_HOVER } else { COLOR_BG_DROP };
-                    painter.rect_filled(rect, 12.0, bg);
+                    let mut browse_dump = false;
+                    let mut browse_elf = false;
 
-                    let border_color = if hovering {
-                        COLOR_CYAN
-                    } else if !fs.dump_path.is_empty() {
-                        COLOR_BORDER_LOADED
-                    } else {
-                        COLOR_BORDER_EMPTY
-                    };
+                    ui.allocate_ui(egui::vec2(total_w, card_h), |ui| {
+                        ui.horizontal(|ui| {
+                            // --- Dump card ---
+                            let (rect, response) = ui.allocate_exact_size(egui::vec2(card_w, card_h), egui::Sense::click().union(egui::Sense::hover()));
+                            let painter = ui.painter_at(rect);
+                            let dump_hovered = response.hovered() || hovering;
+                            let has_dump = !fs.dump_path.is_empty();
 
-                    if fs.dump_path.is_empty() && !hovering {
-                        draw_dashed_border(&painter, rect.shrink(1.0), 12.0, 8.0, 6.0, egui::Stroke::new(1.5, border_color));
-                    } else {
-                        painter.rect_stroke(rect, 12.0, egui::Stroke::new(1.5, border_color));
-                    }
+                            let dump_border = if dump_hovered && !has_dump { COLOR_CYAN } else if has_dump { COLOR_BORDER_LOADED } else { COLOR_BORDER_EMPTY };
+                            let bg = if dump_hovered { COLOR_BG_HOVER } else { COLOR_BG_DROP };
+                            painter.rect_filled(rect, 10.0, bg);
+                            painter.rect_stroke(rect, 10.0, egui::Stroke::new(if dump_hovered { 2.0 } else { 1.0 }, dump_border), egui::StrokeKind::Inside);
 
-                    // Drop zone content
-                    if fs.dump_path.is_empty() {
-                        draw_download_icon(&painter, rect.center() - egui::vec2(0.0, 18.0), if hovering { COLOR_CYAN } else { COLOR_SUBTLE });
-                        let label = if hovering { "Release to load" } else { "Drop .psp2dmp file here" };
-                        painter.text(rect.center() + egui::vec2(0.0, 30.0), egui::Align2::CENTER_CENTER, label, egui::FontId::proportional(15.0), if hovering { COLOR_CYAN } else { COLOR_DIM });
-                        painter.text(rect.center() + egui::vec2(0.0, 50.0), egui::Align2::CENTER_CENTER, "or click to browse", egui::FontId::proportional(12.0), COLOR_SUBTLE);
-                    } else {
-                        let filename = std::path::Path::new(&fs.dump_path).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| fs.dump_path.clone());
-                        draw_checkmark(&painter, rect.center() - egui::vec2(0.0, 12.0), COLOR_GREEN);
-                        painter.text(rect.center() + egui::vec2(0.0, 18.0), egui::Align2::CENTER_CENTER, &filename, egui::FontId::monospace(14.0), COLOR_GREEN);
-                        painter.text(rect.center() + egui::vec2(0.0, 36.0), egui::Align2::CENTER_CENTER, "click to change", egui::FontId::proportional(11.0), COLOR_SUBTLE);
-                    }
+                            if !has_dump {
+                                let c = if dump_hovered { COLOR_CYAN } else { COLOR_SUBTLE };
+                                painter.text(rect.center() - egui::vec2(0.0, 28.0), egui::Align2::CENTER_CENTER, egui_phosphor::regular::DOWNLOAD_SIMPLE, egui::FontId::proportional(28.0), c);
+                                painter.text(rect.center() - egui::vec2(0.0, 2.0), egui::Align2::CENTER_CENTER, "Crashdump", egui::FontId::proportional(14.0), if dump_hovered { COLOR_CYAN } else { COLOR_DIM });
+                                painter.text(rect.center() + egui::vec2(0.0, 16.0), egui::Align2::CENTER_CENTER, "Drop .psp2dmp or click", egui::FontId::proportional(11.0), if dump_hovered { COLOR_CYAN } else { COLOR_SUBTLE });
+                            } else {
+                                let filename = std::path::Path::new(&fs.dump_path).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| fs.dump_path.clone());
+                                painter.text(rect.center() - egui::vec2(0.0, 28.0), egui::Align2::CENTER_CENTER, egui_phosphor::regular::CHECK_CIRCLE, egui::FontId::proportional(24.0), COLOR_GREEN);
+                                painter.text(rect.center() - egui::vec2(0.0, 4.0), egui::Align2::CENTER_CENTER, "Crashdump", egui::FontId::proportional(11.0), COLOR_DIM);
+                                painter.text(rect.center() + egui::vec2(0.0, 14.0), egui::Align2::CENTER_CENTER, &filename, egui::FontId::monospace(11.0), COLOR_GREEN);
+                                painter.text(rect.center() + egui::vec2(0.0, 32.0), egui::Align2::CENTER_CENTER, if dump_hovered { "click to change" } else { "" }, egui::FontId::proportional(10.0), COLOR_SUBTLE);
+                            }
+                            if response.clicked() { browse_dump = true; }
 
-                    if response.clicked() {
+                            ui.add_space(card_gap);
+
+                            // --- ELF card ---
+                            let (rect, response) = ui.allocate_exact_size(egui::vec2(card_w, card_h), egui::Sense::click().union(egui::Sense::hover()));
+                            let painter = ui.painter_at(rect);
+                            let elf_hovered = response.hovered();
+                            let has_elf = !fs.elf_path.is_empty();
+
+                            let elf_border = if elf_hovered { COLOR_CYAN } else if has_elf { COLOR_BORDER_LOADED } else { COLOR_BORDER_EMPTY };
+                            let bg = if elf_hovered { COLOR_BG_HOVER } else { COLOR_BG_DROP };
+                            painter.rect_filled(rect, 10.0, bg);
+                            painter.rect_stroke(rect, 10.0, egui::Stroke::new(if elf_hovered { 2.0 } else { 1.0 }, elf_border), egui::StrokeKind::Inside);
+
+                            if !has_elf {
+                                let c = if elf_hovered { COLOR_CYAN } else { COLOR_SUBTLE };
+                                painter.text(rect.center() - egui::vec2(0.0, 28.0), egui::Align2::CENTER_CENTER, egui_phosphor::regular::CUBE, egui::FontId::proportional(28.0), c);
+                                painter.text(rect.center() - egui::vec2(0.0, 2.0), egui::Align2::CENTER_CENTER, "ELF Binary", egui::FontId::proportional(14.0), if elf_hovered { COLOR_CYAN } else { COLOR_DIM });
+                                painter.text(rect.center() + egui::vec2(0.0, 16.0), egui::Align2::CENTER_CENTER, "Optional — click to browse", egui::FontId::proportional(11.0), if elf_hovered { COLOR_CYAN } else { COLOR_SUBTLE });
+                            } else {
+                                let elf_filename = std::path::Path::new(&fs.elf_path).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| fs.elf_path.clone());
+                                painter.text(rect.center() - egui::vec2(0.0, 28.0), egui::Align2::CENTER_CENTER, egui_phosphor::regular::CUBE, egui::FontId::proportional(24.0), COLOR_GREEN);
+                                painter.text(rect.center() - egui::vec2(0.0, 4.0), egui::Align2::CENTER_CENTER, "ELF Binary", egui::FontId::proportional(11.0), COLOR_DIM);
+                                painter.text(rect.center() + egui::vec2(0.0, 14.0), egui::Align2::CENTER_CENTER, &elf_filename, egui::FontId::monospace(11.0), COLOR_GREEN);
+                                let tag = if fs.elf_auto { "auto-detected" } else { "" };
+                                painter.text(rect.center() + egui::vec2(0.0, 30.0), egui::Align2::CENTER_CENTER, tag, egui::FontId::proportional(10.0), COLOR_SUBTLE);
+                                if elf_hovered {
+                                    painter.text(rect.center() + egui::vec2(0.0, 44.0), egui::Align2::CENTER_CENTER, "click to change", egui::FontId::proportional(10.0), COLOR_CYAN);
+                                }
+                            }
+                            if response.clicked() { browse_elf = true; }
+                        });
+                    });
+
+                    if browse_dump {
                         if let Some(path) = rfd::FileDialog::new().add_filter("PSP2 Coredump", &["psp2dmp", "psp2dmp.tmp"]).pick_file() {
                             fs.dump_path = path.to_string_lossy().to_string();
                             if let Some(elf) = find_elf_for_dump(&fs.dump_path) {
@@ -242,20 +278,7 @@ impl App {
                             }
                         }
                     }
-
-                    ui.add_space(12.0);
-
-                    // ELF status (clickable label)
-                    if !fs.elf_path.is_empty() {
-                        let elf_filename = std::path::Path::new(&fs.elf_path).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| fs.elf_path.clone());
-                        let label = if fs.elf_auto { format!("ELF: {} (auto-detected)", elf_filename) } else { format!("ELF: {}", elf_filename) };
-                        if ui.label(egui::RichText::new(&label).size(12.0).color(COLOR_GREEN)).on_hover_text("Click to change ELF").clicked() {
-                            if let Some(path) = rfd::FileDialog::new().add_filter("ELF Binary", &["elf"]).pick_file() {
-                                fs.elf_path = path.to_string_lossy().to_string();
-                                fs.elf_auto = false;
-                            }
-                        }
-                    } else if ui.label(egui::RichText::new("No ELF — click to browse").size(12.0).color(COLOR_YELLOW)).on_hover_text("Select ELF for symbol resolution").clicked() {
+                    if browse_elf {
                         if let Some(path) = rfd::FileDialog::new().add_filter("ELF Binary", &["elf"]).pick_file() {
                             fs.elf_path = path.to_string_lossy().to_string();
                             fs.elf_auto = false;
@@ -268,14 +291,14 @@ impl App {
                     let can_analyze = !fs.dump_path.is_empty();
                     let error_msg = fs.error.clone();
                     ui.add_enabled_ui(can_analyze, |ui| {
-                        let btn = egui::Button::new(egui::RichText::new("    Analyze    ").size(18.0).strong())
-                            .fill(COLOR_BTN).rounding(10.0).min_size(BTN_MIN_SIZE);
+                        let btn = egui::Button::new(egui::RichText::new(format!("  {}  Analyze  ", egui_phosphor::regular::MAGNIFYING_GLASS)).size(18.0).strong())
+                            .fill(COLOR_BTN).corner_radius(10.0).min_size(BTN_MIN_SIZE);
                         if ui.add(btn).clicked() { do_analyze = true; }
                     });
 
                     if let Some(ref err) = error_msg {
-                        ui.add_space(16.0);
-                        ui.label(egui::RichText::new(err).color(COLOR_RED));
+                        ui.add_space(32.0);
+                        ui.label(egui::RichText::new(format!("{} {}", egui_phosphor::regular::WARNING_CIRCLE, err)).color(COLOR_RED));
                     }
                 });
             });
@@ -291,20 +314,23 @@ impl App {
         let mut go_back = false;
 
         // Top bar
-        egui::TopBottomPanel::top("top_bar").show(ctx, |ui| {
+        egui::TopBottomPanel::top("top_bar")
+            .min_height(36.0)
+            .show(ctx, |ui| {
+            ui.add_space(4.0);
             ui.horizontal(|ui| {
-                if ui.button("Back").clicked() { go_back = true; }
+                if ui.button(format!("{} Back", egui_phosphor::regular::ARROW_LEFT)).clicked() { go_back = true; }
                 ui.separator();
 
                 if let AppState::Analysis(ref state) = self.state {
-                    ui.label(egui::RichText::new(&state.result.dump_name).strong().monospace());
+                    ui.label(egui::RichText::new(format!("{} {}", egui_phosphor::regular::FILE, &state.result.dump_name)).strong().monospace());
                     ui.label(egui::RichText::new("+").color(COLOR_DIM));
-                    ui.label(egui::RichText::new(&state.result.elf_name).strong().monospace());
+                    ui.label(egui::RichText::new(format!("{} {}", egui_phosphor::regular::CUBE, &state.result.elf_name)).strong().monospace());
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("Copy to clipboard").clicked() {
+                        if ui.button(format!("{} Copy to clipboard", egui_phosphor::regular::CLIPBOARD)).clicked() {
                             let text = state.result.format_thread_text(state.selected_thread);
-                            ui.output_mut(|o| o.copied_text = text);
+                            ui.ctx().copy_text(text);
                         }
                         ui.separator();
 
@@ -332,8 +358,15 @@ impl App {
             .default_width(SIDEBAR_WIDTH)
             .resizable(true)
             .show(ctx, |ui| {
-                ui.heading("Threads");
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    ui.add_space(8.0);
+                    ui.label(egui::RichText::new(egui_phosphor::regular::LIST_BULLETS).size(18.0));
+                    ui.heading("Threads");
+                });
+                ui.add_space(6.0);
                 ui.separator();
+                ui.add_space(4.0);
 
                 let AppState::Analysis(ref mut state) = self.state else { return };
                 let width = ui.available_width();
@@ -341,21 +374,90 @@ impl App {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     for (i, thread) in state.result.threads.iter().enumerate() {
                         let selected = state.selected_thread == i;
-                        let name_color = if thread.crashed { COLOR_RED } else if selected { egui::Color32::WHITE } else { COLOR_DIM };
-                        let badge_color = if thread.crashed { COLOR_RED } else { egui::Color32::from_rgb(100, 100, 100) };
-                        let badge_text = if thread.crashed { format!("CRASHED - {}", thread.stop_reason) } else { thread.status.clone() };
 
-                        let mut job = egui::text::LayoutJob::default();
-                        job.wrap = egui::text::TextWrapping { max_width: width - 16.0, ..Default::default() };
-                        job.append(&thread.name, 0.0, egui::TextFormat { font_id: egui::FontId::proportional(13.0), color: name_color, ..Default::default() });
-                        job.append(&format!("\n{}", badge_text), 0.0, egui::TextFormat { font_id: egui::FontId::proportional(10.0), color: badge_color, ..Default::default() });
+                        let icon = if thread.crashed {
+                            egui_phosphor::regular::WARNING_CIRCLE
+                        } else if thread.status == "Waiting" {
+                            egui_phosphor::regular::HOURGLASS
+                        } else if thread.status == "Running" {
+                            egui_phosphor::regular::PLAY
+                        } else if thread.status == "Ready" {
+                            egui_phosphor::regular::ARROW_RIGHT
+                        } else if thread.status == "Dormant" {
+                            egui_phosphor::regular::MOON
+                        } else {
+                            egui_phosphor::regular::CIRCLE
+                        };
 
-                        ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
-                            ui.set_width(width);
-                            if ui.add(egui::SelectableLabel::new(selected, job)).clicked() {
-                                state.selected_thread = i;
-                            }
-                        });
+                        // [icon | name + subtext] card
+                        let card_h = 52.0;
+                        let (rect, response) = ui.allocate_exact_size(
+                            egui::vec2(width, card_h),
+                            egui::Sense::click().union(egui::Sense::hover()),
+                        );
+                        let hovered = response.hovered();
+                        let painter = ui.painter_at(rect);
+
+                        // Background
+                        let bg = if selected {
+                            COLOR_ACCENT
+                        } else if hovered {
+                            egui::Color32::from_rgb(35, 35, 50)
+                        } else {
+                            egui::Color32::TRANSPARENT
+                        };
+                        painter.rect_filled(rect, 6.0, bg);
+
+                        // Left accent bar for crashed threads
+                        if thread.crashed {
+                            painter.rect_filled(
+                                egui::Rect::from_min_size(rect.left_top(), egui::vec2(3.0, card_h)),
+                                3.0, COLOR_RED,
+                            );
+                        }
+
+                        let icon_color = if thread.crashed { COLOR_RED } else if selected || hovered { egui::Color32::WHITE } else { COLOR_SUBTLE };
+                        let name_color = if thread.crashed { COLOR_RED } else if selected || hovered { egui::Color32::WHITE } else { egui::Color32::from_rgb(200, 200, 210) };
+                        let sub_color = if thread.crashed { COLOR_RED } else if selected { egui::Color32::from_rgb(190, 190, 200) } else if hovered { egui::Color32::from_rgb(160, 160, 170) } else { egui::Color32::from_rgb(110, 110, 120) };
+
+                        // Big icon, vertically centered
+                        let icon_x = rect.left() + 10.0;
+                        painter.text(
+                            egui::pos2(icon_x, rect.center().y),
+                            egui::Align2::LEFT_CENTER,
+                            icon,
+                            egui::FontId::proportional(22.0),
+                            icon_color,
+                        );
+
+                        // Name + subtext, stacked vertically
+                        let text_x = icon_x + 30.0;
+                        painter.text(
+                            egui::pos2(text_x, rect.center().y - 8.0),
+                            egui::Align2::LEFT_CENTER,
+                            &thread.name,
+                            egui::FontId::proportional(13.0),
+                            name_color,
+                        );
+
+                        let badge = if thread.crashed {
+                            format!("{} CRASHED — {}", egui_phosphor::regular::SKULL, thread.stop_reason)
+                        } else {
+                            thread.status.clone()
+                        };
+                        painter.text(
+                            egui::pos2(text_x, rect.center().y + 10.0),
+                            egui::Align2::LEFT_CENTER,
+                            &badge,
+                            egui::FontId::proportional(10.0),
+                            sub_color,
+                        );
+
+                        if response.clicked() {
+                            state.selected_thread = i;
+                        }
+
+                        ui.add_space(1.0);
                     }
                 });
             });
@@ -371,6 +473,20 @@ impl App {
                 };
                 egui::ScrollArea::vertical().auto_shrink([false; 2]).show(ui, |ui| {
                     draw_thread_detail(ui, thread);
+
+                    // TTY output (dump-wide, shown after thread detail)
+                    if let Some(ref tty) = state.result.tty_output {
+                        ui.add_space(32.0);
+                        ui.separator();
+                        ui.add_space(32.0);
+                        egui::CollapsingHeader::new(egui::RichText::new(format!("{} TTY Output", egui_phosphor::regular::TERMINAL)).strong().size(16.0))
+                            .default_open(false)
+                            .show(ui, |ui| {
+                                code_frame(ui, |ui| {
+                                    ui.label(egui::RichText::new(tty).monospace().color(COLOR_DIM));
+                                });
+                            });
+                    }
                 });
             });
     }
@@ -398,15 +514,27 @@ fn draw_thread_detail(ui: &mut egui::Ui, thread: &ThreadDisplay) {
         if let Some(ref lr) = thread.lr_display {
             row(ui, "LR", egui::RichText::new(lr).monospace().color(COLOR_CYAN));
         }
+        if let (Some(peak), Some(current)) = (thread.stack_peak, thread.stack_current) {
+            row(ui, "Stack usage", egui::RichText::new(format!("{} / {} bytes (peak)", current, peak)).monospace());
+        }
     });
 
     let Some(ref crash) = thread.crash else { return };
-    ui.add_space(16.0);
+
+    if let Some(ref fault) = crash.fault_addr {
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("Fault address").color(COLOR_DIM));
+            ui.label(egui::RichText::new(fault).monospace().strong().color(COLOR_RED));
+        });
+    }
+
+    ui.add_space(32.0);
     ui.separator();
 
     // Registers
     ui.add_space(8.0);
-    egui::CollapsingHeader::new(egui::RichText::new("Registers").strong().size(16.0))
+    egui::CollapsingHeader::new(egui::RichText::new(format!("{} Registers", egui_phosphor::regular::CPU)).strong().size(16.0))
         .default_open(true)
         .show(ui, |ui| {
             egui::Grid::new("registers").num_columns(6).spacing([8.0, 2.0]).striped(true).show(ui, |ui| {
@@ -429,23 +557,23 @@ fn draw_thread_detail(ui: &mut egui::Ui, thread: &ThreadDisplay) {
 
     // Disassembly
     for disasm in [&crash.pc_disasm, &crash.lr_disasm].into_iter().flatten() {
-        ui.add_space(8.0);
-        egui::CollapsingHeader::new(egui::RichText::new(format!("Disassembly - {}", disasm.header)).strong().size(16.0))
+        ui.add_space(32.0);
+        egui::CollapsingHeader::new(egui::RichText::new(format!("{} Disassembly - {}", egui_phosphor::regular::CODE, disasm.header)).strong().size(16.0))
             .default_open(true)
             .show(ui, |ui| draw_disasm(ui, &disasm.lines));
     }
 
     // Stack trace
     if !crash.stack_trace.is_empty() {
-        ui.add_space(8.0);
-        egui::CollapsingHeader::new(egui::RichText::new("Stack Trace").strong().size(16.0))
+        ui.add_space(32.0);
+        egui::CollapsingHeader::new(egui::RichText::new(format!("{} Stack Trace", egui_phosphor::regular::STACK)).strong().size(16.0))
             .default_open(true)
             .show(ui, |ui| draw_stack_trace(ui, &crash.stack_trace));
     }
 
     // Stack memory
-    ui.add_space(8.0);
-    egui::CollapsingHeader::new(egui::RichText::new("Stack Memory").strong().size(16.0))
+    ui.add_space(32.0);
+    egui::CollapsingHeader::new(egui::RichText::new(format!("{} Stack Memory", egui_phosphor::regular::MEMORY)).strong().size(16.0))
         .default_open(false)
         .show(ui, |ui| draw_stack_memory(ui, &crash.stack));
 }
@@ -500,56 +628,13 @@ fn draw_stack_memory(ui: &mut egui::Ui, stack: &[StackLine]) {
 
 /// Wraps content in a dark code block with horizontal scroll
 fn code_frame(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui)) {
-    egui::Frame::none()
+    egui::Frame::NONE
         .fill(COLOR_BG_CODE)
         .inner_margin(8.0)
-        .rounding(4.0)
+        .corner_radius(4.0)
         .show(ui, |ui| {
             egui::ScrollArea::horizontal().show(ui, add_contents);
         });
-}
-
-// --- Drawing helpers ---
-
-fn draw_dashed_border(painter: &egui::Painter, rect: egui::Rect, corner: f32, dash: f32, gap: f32, stroke: egui::Stroke) {
-    let r = rect;
-    let c = corner;
-    draw_dashed_line(painter, r.left_top() + egui::vec2(c, 0.0), r.right_top() - egui::vec2(c, 0.0), dash, gap, stroke);
-    draw_dashed_line(painter, r.left_bottom() + egui::vec2(c, 0.0), r.right_bottom() - egui::vec2(c, 0.0), dash, gap, stroke);
-    draw_dashed_line(painter, r.left_top() + egui::vec2(0.0, c), r.left_bottom() - egui::vec2(0.0, c), dash, gap, stroke);
-    draw_dashed_line(painter, r.right_top() + egui::vec2(0.0, c), r.right_bottom() - egui::vec2(0.0, c), dash, gap, stroke);
-}
-
-fn draw_dashed_line(painter: &egui::Painter, from: egui::Pos2, to: egui::Pos2, dash: f32, gap: f32, stroke: egui::Stroke) {
-    let delta = to - from;
-    let len = delta.length();
-    if len < 0.1 { return; }
-    let dir = delta / len;
-    let cycle = dash + gap;
-    let mut pos = 0.0;
-    while pos < len {
-        let start = pos;
-        let end = (pos + dash).min(len);
-        painter.line_segment([from + dir * start, from + dir * end], stroke);
-        pos += cycle;
-    }
-}
-
-fn draw_download_icon(painter: &egui::Painter, center: egui::Pos2, color: egui::Color32) {
-    let stroke = egui::Stroke::new(2.5, color);
-    // Arrow shaft
-    painter.line_segment([center - egui::vec2(0.0, 12.0), center + egui::vec2(0.0, 12.0)], stroke);
-    // Arrow head
-    painter.line_segment([center + egui::vec2(0.0, 12.0), center + egui::vec2(-8.0, 4.0)], stroke);
-    painter.line_segment([center + egui::vec2(0.0, 12.0), center + egui::vec2(8.0, 4.0)], stroke);
-    // Tray
-    painter.line_segment([egui::pos2(center.x - 14.0, center.y + 18.0), egui::pos2(center.x + 14.0, center.y + 18.0)], egui::Stroke::new(2.0, color));
-}
-
-fn draw_checkmark(painter: &egui::Painter, center: egui::Pos2, color: egui::Color32) {
-    let stroke = egui::Stroke::new(2.5, color);
-    painter.line_segment([center - egui::vec2(8.0, 0.0), center + egui::vec2(-2.0, 8.0)], stroke);
-    painter.line_segment([center + egui::vec2(-2.0, 8.0), center + egui::vec2(10.0, -6.0)], stroke);
 }
 
 // --- Entry point ---

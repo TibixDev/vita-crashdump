@@ -25,4 +25,8 @@ fn main() {
     for idx in to_print {
         print!("{}", result.format_thread_text(idx));
     }
+
+    if let Some(ref tty) = result.tty_output {
+        println!("\nTTY Output:\n{}", tty);
+    }
 }

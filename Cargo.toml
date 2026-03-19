@@ -1,6 +1,6 @@
 [package]
 name = "vita-crashdump"
-version = "0.1.2"
+version = "0.2"
 edition = "2021"
 default-run = "vita-crashdump"
 
@@ -21,8 +21,9 @@ required-features = ["gui"]
 goblin = "0.9"
 flate2 = "1"
 rustc-demangle = "0.1"
-eframe = { version = "0.29", optional = true }
+eframe = { version = "0.33", optional = true }
 rfd = { version = "0.15", optional = true }
+egui-phosphor = { version = "0.11", optional = true }
 
 [features]
-gui = ["dep:eframe", "dep:rfd"]
+gui = ["dep:eframe", "dep:rfd", "dep:egui-phosphor"]
