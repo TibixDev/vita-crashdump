@@ -4,6 +4,12 @@ PS Vita crashdump (`.psp2dmp`) analyzer. Parses coredump ELF files produced by t
 
 Both a CLI tool and a GUI (egui) are included. They produce identical analysis output.
 
+<p>
+  <img src="assets/screen_1.png" width="32%" />
+  <img src="assets/screen_2.png" width="32%" />
+  <img src="assets/screen_3.png" width="32%" />
+</p>
+
 ## Features
 
 - Parses MODULE_INFO, THREAD_INFO, and THREAD_REG_INFO notes from Vita coredumps
